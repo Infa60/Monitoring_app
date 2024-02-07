@@ -516,6 +516,34 @@ server <- function(input, output, session) {
         mutate(Norme = paste(Min, "à", Max, Unite)) %>%
         select(Variable = Variable, `Avant-dernière prise de sang` = First_Value, `Dernière prise de sang` = Last_Value, Norme)
       
+      # Concaténer Variables_approaching_norms et Variables_receding_from_norms
+      combined_vars <- bind_rows(
+        Variables_approaching_norms %>% select(Variable),
+        Variables_receding_from_norms %>% select(Variable)
+      )
+      
+      # Filtrer les valeurs hors normes pour le sujet 'A'
+      values_out_of_range <- data_joined %>%
+        filter(Valeur < min | Valeur > max, Sujet == 'A') %>%
+        arrange(desc(Date)) %>%
+        group_by(Variable) %>%
+        slice(1) %>%
+        ungroup() %>%
+        select(Sujet, Date, Categorie, Variable, Valeur, min, max, Unite)
+      
+      # Exclure les variables déjà présentes dans combined_vars de values_out_of_range
+      values_out_of_range_filtered <- values_out_of_range %>%
+        anti_join(combined_vars, by = "Variable")
+      
+      
+      last_date <- max(data_num$Date[data_num$Sujet == sujet_selected])
+      
+      values_to_check <- values_out_of_range_filtered %>%
+        filter(Sujet == sujet_selected, Date == last_date, Valeur < min | Valeur > max) %>%
+        select(Variable, Valeur, min, max, Unite) %>%
+        mutate(Norme = paste(min, "à", max, Unite)) %>%
+        select(Variable, Valeur, Norme)
+      
       
       
       
@@ -524,6 +552,7 @@ server <- function(input, output, session) {
                         output_file = file,
                         params = list(Variables_approaching_norms = Variables_approaching_norms,
                                       Variables_receding_from_norms = Variables_receding_from_norms,
+                                      values_to_check = values_to_check,
                                       sujet = sujet_selected))  # Ajoutez cette ligne
       
     }
