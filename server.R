@@ -35,41 +35,37 @@ server <- function(input, output, session) {
     sujet_select <- input$Sujet
     date_select <- input$Date
     
-    # Vérifier si un sujet est sélectionné
-    if (!is.null(sujet_select)) {
-      data_sujet <- data_num[data_num$Sujet == sujet_select,]
+    # S'assurer que data_num est bien défini et contient des données
+    if (!is.null(sujet_select) && nrow(data_num) > 0) {
+      data_sujet <- data_num %>%
+        filter(Sujet == sujet_select) %>%
+        filter(Variable %in% c("Age", "Poids", "Masse_Grasse"))
       
-      # Vérifier si des lignes sont présentes pour le sujet sélectionné
-      if (nrow(data_sujet) > 0) {
-        # Filtrer par date si une date est sélectionnée
-        if (!is.null(date_select)) {
-          data_anthro <- data_sujet %>%
-            filter(Variable %in% c("Age", "Poids", "Masse_Grasse"),
-                   Date %in% date_select) %>%
-            arrange(desc(Date))
-          
-          # Renommer la colonne "Valeur" avec la date de la prise de valeur
-          data_anthro <- data_anthro %>%
-            pivot_wider(names_from = Date, values_from = Valeur)
-        } else {
-          # Si aucune date n'est sélectionnée, prendre toutes les dates
-          data_anthro <- data_sujet %>%
-            filter(Variable %in% c("Age", "Poids", "Masse_Grasse")) %>%
-            arrange(desc(Date))
-          
-          # Renommer la colonne "Valeur" avec la date de la prise de valeur
-          data_anthro <- data_anthro %>%
-            pivot_wider(names_from = Date, values_from = Valeur)
-        }
-        
-        return(datatable(data_anthro))
-      } else {
-        # Aucune ligne pour le sujet sélectionné
-        return(NULL)
+      # Filtrer par date si spécifié
+      if (!is.null(date_select) && date_select != "") {
+        data_sujet <- data_sujet %>%
+          filter(Date %in% date_select)
       }
+      
+      # Pivoter les données pour avoir des variables comme colonnes et les dates comme noms de colonnes
+      data_anthro <- data_sujet %>%
+        select(-Categorie) %>%
+        pivot_wider(names_from = Date, values_from = Valeur, names_prefix = "Mesuré le ")
+      
+      # Utiliser DT::datatable pour afficher le tableau
+      datatable(data_anthro, options = list(
+        dom = 't',  # Afficher seulement le tableau, sans contrôles supplémentaires
+        paging = FALSE,  # Désactiver la pagination
+        searching = FALSE),  # Désactiver la recherche
+        rownames = FALSE
+      )
     } else {
-      # Aucun sujet sélectionné
-      return(NULL)
+      return(datatable(data.frame(), options = list(
+        dom = 't',
+        paging = FALSE,
+        searching = FALSE),
+        rownames = FALSE
+      ))
     }
   })
   
@@ -501,13 +497,26 @@ server <- function(input, output, session) {
         filter((First_Value < Min | First_Value > Max) & (Last_Value < Min | Last_Value > Max))
       
       
+      # Joindre value_comparison avec range_value pour récupérer 'Unite'
+      value_comparison_with_unit <- value_comparison %>%
+        left_join(range_value %>% select(Variable, Unite), by = "Variable")
+      
+      # Assurez-vous que la jointure a réussi en vérifiant si 'Unite' est maintenant disponible
+      # puis continuez avec la création des tableaux ajustés
+      
       # Filtrer pour obtenir les Variables qui se sont rapprochées des normes
-      Variables_approaching_norms <- filter(value_comparison, Rapprochement) %>%
-        select(Sujet, Variable = Variable, First_Value, Last_Value, Min, Max)
+      Variables_approaching_norms <- value_comparison_with_unit %>%
+        filter(Rapprochement) %>%
+        mutate(Norme = paste(Min, "à", Max, Unite)) %>%
+        select(Variable = Variable, `Avant-dernière prise de sang` = First_Value, `Dernière prise de sang` = Last_Value, Norme)
       
       # Filtrer pour obtenir les Variables qui se sont éloignées des normes
-      Variables_receding_from_norms <- filter(value_comparison, Eloignement) %>%
-        select(Sujet, Variable = Variable, First_Value, Last_Value, Min, Max)
+      Variables_receding_from_norms <- value_comparison_with_unit %>%
+        filter(Eloignement) %>%
+        mutate(Norme = paste(Min, "à", Max, Unite)) %>%
+        select(Variable = Variable, `Avant-dernière prise de sang` = First_Value, `Dernière prise de sang` = Last_Value, Norme)
+      
+      
       
       
       # Utiliser `params` pour passer les données filtrées à R Markdown
